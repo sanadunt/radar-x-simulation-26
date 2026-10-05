@@ -7,7 +7,7 @@ const { createDefaultTargets } = require('./target_gen');
 
 // ─── Load Runtime Config ──────────────────────────────────────────────────────
 let cfg;
-const runtimePath = path.join(__dirname, '..', 'runtime-config.json');
+const runtimePath = process.env.RDXXB_RUNTIME_CONFIG_PATH || path.join(__dirname, '..', 'runtime-config.json');
 try {
   cfg = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
 } catch (_) {
@@ -344,11 +344,18 @@ function publishAll() {
 }
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
-process.on('SIGINT', () => {
+let shuttingDown = false;
+
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log('\n[Simulator] Shutting down ...');
-  if (publishTimer) clearInterval(publishTimer);
+  clearInterval(publishTimer);
   client.end(true, {}, () => {
     console.log('[Simulator] Disconnected. Goodbye.');
     process.exit(0);
   });
-});
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

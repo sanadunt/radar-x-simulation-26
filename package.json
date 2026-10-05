@@ -8,9 +8,11 @@
     "webapp"
   ],
   "scripts": {
+    "start": "npm run start --workspace=webapp",
     "simulator": "npm run start --workspace=simulator",
     "webapp": "npm run start --workspace=webapp",
-    "dev": "npm run start --workspace=webapp"
+    "dev": "npm run start --workspace=webapp",
+    "test": "node --test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

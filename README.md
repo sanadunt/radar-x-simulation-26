@@ -197,7 +197,7 @@ mosquitto_pub -h 127.0.0.1 -p 1883 -t test -m hello && echo "Broker OK"
 
 ## 5. Configuration
 
-Runtime settings are read from **`runtime-config.json`** at the project root. This local file is ignored by Git because it may contain broker credentials. For the documented eight-module defaults, copy `runtime-config.example.json` to `runtime-config.json` and edit it. If the file is absent, the webapp bootstraps it from legacy defaults in `config.js`.
+Runtime settings are read from server-side **`runtime-config.json`** at the project root. This local file is ignored by Git because it may contain broker credentials. The dashboard fetches configuration from `/api/config` while open and saves changes back to this file; the browser does not own the durable copy. `/api/config` returns the full config, including broker credentials, to dashboard users, so production access must be authenticated and served over HTTPS.
 
 ### 5.1 `runtime-config.json` structure
 
@@ -235,8 +235,9 @@ Runtime settings are read from **`runtime-config.json`** at the project root. Th
 
   // Simulation behaviour
   "simulator": {
-    "publishIntervalMs": 5000,  // how often each module publishes (ms)
-    "targetCount": 5            // number of synthetic targets to generate
+    "autoStart": true,         // start the simulator when the webapp starts
+    "publishIntervalMs": 5000, // how often each module publishes (ms)
+    "targetCount": 5           // number of synthetic targets to generate
   },
 
   // Individual module enable/disable + topic mapping
@@ -268,11 +269,30 @@ Runtime settings are read from **`runtime-config.json`** at the project root. Th
 
 ### 5.2 Editing configuration
 
-You can edit `runtime-config.json` directly **or** use the **Settings** tab in the dashboard at runtime. Changes made via the UI are persisted to disk immediately and picked up by the simulator on next publish cycle.
+You can edit `runtime-config.json` directly or use the **Settings** tab in the dashboard. Dashboard changes are persisted to disk through `/api/config`. `simulator.autoStart` defaults to `true` when omitted, including in older config files. Set it to `false` and restart the webapp to disable automatic startup; this does not stop a simulator that is already running. With `NODE_ENV=production`, the server requires both `WEBAPP_AUTH_USER` and `WEBAPP_AUTH_PASSWORD`.
 
 ### 5.3 Connecting to a remote MQTT broker
 
 Change both `sim_mqtt` and `display_mqtt` to point to your broker's IP/hostname. If the browser and Node.js processes live on different machines, ensure the `display_mqtt.host` is reachable from the client's browser (not `127.0.0.1`).
+
+### 5.4 Hostinger deployment
+
+Use `npm start` as the Hostinger app start command; the root script launches the webapp workspace. The server uses Hostinger's `PORT` environment variable when provided, falling back to `runtime-config.json`'s `webapp.port`, and binds to `0.0.0.0`. Hostinger supports Express Node.js web apps on Business and Cloud plans; its [environment variable settings](https://www.hostinger.com/support/how-to-add-environment-variables-during-node-js-application-deployment/) keep deployment values out of the repository.
+
+Set these values in Hostinger's environment settings:
+
+```text
+NODE_ENV=production
+WEBAPP_AUTH_USER=<admin-user>
+WEBAPP_AUTH_PASSWORD=<long-random-password>
+```
+
+The app refuses production startup without both auth values, protects the dashboard and API with HTTP Basic authentication, and rejects state-changing requests marked `cross-site` by `Sec-Fetch-Site` or carrying an `Origin` host that differs from the request host. Authenticated API clients without browser origin metadata remain supported. Enable HTTPS in Hostinger. The dashboard still receives the full runtime config after authentication, so restrict access to trusted admins. For a public MQTT broker, use `mqtts` for `sim_mqtt` and `wss` for `display_mqtt`, with the broker's TLS ports.
+
+`runtime-config.json` must be writable and stored somewhere that survives redeployment. Set `RDXXB_RUNTIME_CONFIG_PATH` to that file's path if the default project-root file is not persistent.
+
+The simulator is a long-running child of the webapp. It keeps running when the browser closes, but stops when the webapp stops or restarts. Hostinger documents scheduled tasks and resource limits for Web and Cloud plans, but does not guarantee a permanent child process. For a continuously running simulator, use a Hostinger VPS and manage the app with a process manager such as PM2. See Hostinger's [background-process guidance](https://www.hostinger.com/support/which-server-capabilities-are-supported-at-hostinger/) and [VPS Node.js setup](https://www.hostinger.com/support/9553137-how-to-set-up-a-node-js-application-using-hostinger-cloudpanel/).
+
 
 ---
 
@@ -282,7 +302,7 @@ Change both `sim_mqtt` and `display_mqtt` to point to your broker's IP/hostname.
 
 | Service | Default port | Protocol | Where to change |
 |---|---|---|---|
-| **Dashboard** (webapp) | `3000` | HTTP | `runtime-config.json` → `webapp.port` |
+| **Dashboard** (webapp) | `3000` | HTTP | `PORT` environment variable, then `runtime-config.json` → `webapp.port` |
 | **MQTT broker** TCP | `1883` | TCP | Mosquitto config + `runtime-config.json` → `sim_mqtt.port` |
 | **MQTT broker** WebSocket | `9001` | WS | Mosquitto config + `runtime-config.json` → `display_mqtt.port` |
 | **UDP Parser** listener | `20202` | UDP | `runtime-config.json` → `parser.udp_port` (or Parser tab UI) |
@@ -360,15 +380,17 @@ cp .env.example .env
 
 ## 7. Running the System
 
-### Option A — Run everything together (recommended for development)
+### Option A — Start the webapp and simulator
 
 ```bash
 npm run dev
 ```
 
-This uses `concurrently` to start both the **webapp** and the **simulator** in a single terminal with colour-coded output.
+The webapp starts the simulator child process by default. The browser is optional; keep the webapp process running. This does not register an OS startup service. Run the webapp under a service manager if it must start after a machine reboot. Set `simulator.autoStart` to `false` in `runtime-config.json` to disable it on the next webapp start.
 
 ### Option B — Run processes separately
+
+> Set `"simulator": { "autoStart": false }` in `runtime-config.json` before starting the webapp. Otherwise the webapp starts the simulator automatically and a separate `npm run simulator` command would create a duplicate.
 
 **Terminal 1 — Webapp (required first):**
 ```bash
@@ -381,6 +403,7 @@ Expected output:
 ```
 [Webapp] ✓ http://localhost:3000
 [Webapp] Runtime config: /path/to/runtime-config.json
+[Webapp] Simulator auto-start disabled by configuration
 ```
 
 **Terminal 2 — Simulator:**
@@ -411,12 +434,14 @@ python3 parser/parser.py
 
 ### Option C — Control simulator & parser from the dashboard
 
-1. Start only the webapp: `npm run webapp`
+The simulator is already running when the webapp starts with the default configuration. Set `simulator.autoStart` to `false` and restart the webapp to use the dashboard's manual Start control.
+
+1. Start the webapp: `npm run webapp`
 2. Open `http://localhost:3000` in your browser
-3. Navigate to the **Simulation** tab → click **▶ Start**
+3. Navigate to the **Simulation** tab → use **▶ Start** or **■ Stop**
 4. Navigate to the **Parser** tab → click **▶ Start**
 
-The webapp spawns both as child processes and streams their stdout to the browser in real-time.
+The webapp manages simulator and parser child processes. The dashboard shows simulator status and controls; parser logs stream to the dashboard.
 
 ### Stopping
 

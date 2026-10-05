@@ -1,11 +1,21 @@
 'use strict';
 
 const express        = require('express');
+const crypto         = require('crypto');
 const path           = require('path');
 const fs             = require('fs');
-const { spawn }      = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const { isSimulatorAutoStartEnabled } = require('./simulator-autostart');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'runtime-config.json');
+const CONFIG_PATH = process.env.RDXXB_RUNTIME_CONFIG_PATH || path.join(__dirname, '..', 'runtime-config.json');
+const authUsername = process.env.WEBAPP_AUTH_USER || '';
+const authPassword = process.env.WEBAPP_AUTH_PASSWORD || '';
+if (Boolean(authUsername) !== Boolean(authPassword)) {
+  throw new Error('Set both WEBAPP_AUTH_USER and WEBAPP_AUTH_PASSWORD, or leave both unset.');
+}
+if (process.env.NODE_ENV === 'production' && !authUsername) {
+  throw new Error('WEBAPP_AUTH_USER and WEBAPP_AUTH_PASSWORD are required when NODE_ENV=production.');
+}
 
 // ─── Load / Init Runtime Config ───────────────────────────────────────────────
 function loadConfig() {
@@ -47,14 +57,15 @@ let simProcess = null;
 function startSimulator() {
   if (simProcess) return { status: 'already_running', pid: simProcess.pid };
   const simPath = path.join(__dirname, '..', 'simulator', 'index.js');
-  simProcess = spawn('node', [simPath], { stdio: ['ignore', 'pipe', 'pipe'] });
-  simProcess.stdout.on('data', d => process.stdout.write(`[Sim] ${d}`));
-  simProcess.stderr.on('data', d => process.stderr.write(`[Sim ERR] ${d}`));
-  simProcess.on('exit', (code) => {
+  const childProcess = spawn('node', [simPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+  simProcess = childProcess;
+  childProcess.stdout.on('data', d => process.stdout.write(`[Sim] ${d}`));
+  childProcess.stderr.on('data', d => process.stderr.write(`[Sim ERR] ${d}`));
+  childProcess.on('exit', (code) => {
     console.log(`[Sim] Process exited (code ${code})`);
-    simProcess = null;
+    if (simProcess === childProcess) simProcess = null;
   });
-  return { status: 'started', pid: simProcess.pid };
+  return { status: 'started', pid: childProcess.pid };
 }
 
 function stopSimulator() {
@@ -64,8 +75,56 @@ function stopSimulator() {
   return { status: 'stopped' };
 }
 
+function matchesCredential(candidate, expected) {
+  const candidateBytes = Buffer.from(candidate);
+  const expectedBytes = Buffer.from(expected);
+  return candidateBytes.length === expectedBytes.length
+    && crypto.timingSafeEqual(candidateBytes, expectedBytes);
+}
+
+function hasValidBasicAuth(header) {
+  const match = /^Basic\s+([A-Za-z0-9+/]+={0,2})$/i.exec(header || '');
+  if (!match) return false;
+  const credentials = Buffer.from(match[1], 'base64').toString('utf8');
+  const separator = credentials.indexOf(':');
+  if (separator < 0) return false;
+  const userMatches = matchesCredential(credentials.slice(0, separator), authUsername);
+  const passwordMatches = matchesCredential(credentials.slice(separator + 1), authPassword);
+  return userMatches && passwordMatches;
+}
+
 // ─── Express App ──────────────────────────────────────────────────────────────
 const app = express();
+if (authUsername) {
+  app.use((req, res, next) => {
+    if (hasValidBasicAuth(req.get('authorization'))) return next();
+    res.set('WWW-Authenticate', 'Basic realm="RDXXB Dashboard", charset="UTF-8"');
+    res.status(401).send('Authentication required');
+  });
+}
+
+app.use('/api', (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  if (req.get('sec-fetch-site') === 'cross-site') {
+    return res.status(403).send('Cross-origin request denied');
+  }
+  const origin = req.get('origin');
+  if (origin) {
+    try {
+      if (new URL(origin).host.toLowerCase() !== (req.get('host') || '').toLowerCase()) {
+        return res.status(403).send('Cross-origin request denied');
+      }
+    } catch (_) {
+      return res.status(403).send('Cross-origin request denied');
+    }
+  }
+  next();
+});
+
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 app.use(express.json());
 
 // GET full config (browser reads this on load)
@@ -131,7 +190,7 @@ function startParser() {
   const venvPy = path.join(__dirname, '..', '.venv', 'bin', 'python3');
   const pyBin  = fs.existsSync(venvPy) ? venvPy : 'python3';
   // -u = unbuffered Python stdout so lines arrive in real-time
-  parserProcess = spawn(pyBin, ['-u', parserPath], {
+  parserProcess = spawn(pyBin, ['-u', parserPath, '--config', CONFIG_PATH], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -182,14 +241,17 @@ app.get('/api/parser/status',  (req, res) => res.json({
   timestamp: new Date().toISOString(),
 }));
 
+function findPidsOnPort(port) {
+  const output = execFileSync('lsof', ['-t', '-i', `:${port}`], { encoding: 'utf8' });
+  return [...new Set(output.trim().split(/\s+/).filter(Boolean))];
+}
+
 // Check what process (if any) is using parser port
 app.get('/api/parser/port-check', (req, res) => {
-  const { execSync } = require('child_process');
-  const cfg = require(CONFIG_PATH);
-  const port = cfg.parser?.udp_port || 8000;
+  const port = runtimeConfig.parser?.udp_port || 8000;
   
   try {
-    const output = execSync(`lsof -i :${port} 2>/dev/null`).toString();
+    const output = execFileSync('lsof', ['-i', `:${port}`], { encoding: 'utf8' });
     const lines = output.split('\n').filter(l => l.trim());
     if (lines.length > 1) {
       // First line is header, second line has the process
@@ -205,28 +267,25 @@ app.get('/api/parser/port-check', (req, res) => {
 });
 
 // Force kill any process using the parser port (read from config)
-app.post('/api/parser/force-kill', async (req, res) => {
-  const { exec, execSync } = require('child_process');
-  const cfg = require(CONFIG_PATH);
-  const port = cfg.parser?.udp_port || 8000;
-  
+app.post('/api/parser/force-kill', (req, res) => {
+  const port = runtimeConfig.parser?.udp_port || 8000;
+
   try {
-    // First, kill any Python parser processes
+    if (parserProcess) {
+      parserProcess.kill('SIGKILL');
+      parserProcess = null;
+    }
+
     try {
-      execSync("pkill -f 'parser.py' 2>/dev/null || true");
-      console.log('[Parser] Killed python parser processes');
+      for (const pid of findPidsOnPort(port)) {
+        const numericPid = Number(pid);
+        if (!Number.isSafeInteger(numericPid) || numericPid <= 0 || numericPid === process.pid) continue;
+        try {
+          process.kill(numericPid, 'SIGKILL');
+        } catch (_) {}
+      }
     } catch (_) {}
-    
-    // Then, forcefully kill anything on parser port
-    try {
-      execSync(`lsof -ti :${port} | xargs kill -9 2>/dev/null || true`);
-      console.log(`[Parser] Force-killed port ${port}`);
-    } catch (_) {}
-    
-    // Clear internal reference
-    stopParser();
-    
-    // Brief wait to ensure port is released
+
     setTimeout(() => {
       res.json({ status: 'force_killed', message: `Port ${port} and parser processes cleared` });
     }, 500);
@@ -265,11 +324,24 @@ app.get('/api/parser/logs', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-const PORT = runtimeConfig.webapp?.port || 3000;
-app.listen(PORT, () => {
+const PORT = Number(process.env.PORT || runtimeConfig.webapp?.port || 3000);
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
   console.log(`[Webapp] ✓ http://localhost:${PORT}`);
   console.log(`[Webapp] Runtime config: ${CONFIG_PATH}`);
+  if (isSimulatorAutoStartEnabled(runtimeConfig)) {
+    const result = startSimulator();
+    console.log(`[Webapp] Simulator auto-started (PID ${result.pid})`);
+  } else {
+    console.log('[Webapp] Simulator auto-start disabled by configuration');
+  }
 });
 
-// Cleanup on exit
-process.on('SIGINT', () => { stopSimulator(); stopParser(); process.exit(0); });
+function shutdown() {
+  stopSimulator();
+  stopParser();
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

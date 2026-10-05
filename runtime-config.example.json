@@ -24,6 +24,7 @@
     "north_correction_angle_deg": 8.5
   },
   "simulator": {
+    "autoStart": true,
     "publishIntervalMs": 5000,
     "targetCount": 5
   },

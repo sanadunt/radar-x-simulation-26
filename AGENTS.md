@@ -27,8 +27,10 @@ Run from the repository root unless noted:
 ```sh
 npm install
 test -f runtime-config.json || cp runtime-config.example.json runtime-config.json  # first run only; preserve existing local settings
-npm run dev                         # starts only the webapp
-npm run simulator                   # run the MQTT publisher separately
+npm run dev                         # starts webapp; simulator autostarts by default
+npm start                           # production/Hostinger entry point
+npm run simulator                   # manual publisher; set simulator.autoStart=false first
+npm test                            # run Node server lifecycle tests
 python3 parser/parser.py            # run the primary UDP parser
 python3 parser/parser.py --self-test
 python3 rdxxb-parser/parser.py --self-test
@@ -36,7 +38,7 @@ python3 rdxxb-parser/parser.py --self-test
 (cd rdxxb-parser && ./build.sh)     # optional standalone binary
 ```
 
-`npm run webapp` is equivalent to `npm run dev`. Start the webapp and simulator in separate terminals, or start the simulator from the dashboard. Run an external MQTT broker with TCP and WebSocket listeners matching `runtime-config.json` before exercising live MQTT flows. The parser launcher/build scripts also have Windows `.bat` variants.
+`npm run webapp` is equivalent to `npm run dev`. The webapp starts its simulator child on launch unless `simulator.autoStart` is `false`; `PORT` overrides the config port. Production requires `NODE_ENV=production` plus `WEBAPP_AUTH_USER` and `WEBAPP_AUTH_PASSWORD`. This is process-level startup, not an OS service. On Hostinger Web/Cloud, verify support for a continuously running child; use a VPS for an always-on simulator. Run an external MQTT broker with TCP and WebSocket listeners matching `runtime-config.json` before exercising live MQTT flows. The parser launcher/build scripts also have Windows `.bat` variants.
 
 There is no aggregate Node build command. The parser `build.sh` scripts package binaries with PyInstaller; they are not application builds.
 
@@ -46,7 +48,7 @@ There is no aggregate Node build command. The parser `build.sh` scripts package 
 - The web server uses Express handlers and `child_process.spawn`; MQTT and child-process lifecycles use event callbacks. Keep process output/logging and SSE behavior consistent with `webapp/server.js`.
 - The browser is a plain-JavaScript SPA with shared state in `webapp/public/app.js`, not a component framework. Follow its existing MQTT subscription and render/update paths when adding dashboard behavior.
 - Python parsing uses `struct`, dataclasses, and JSON-line logging. The primary parser accepts runtime configuration; the standalone parser has its own config and validation rules.
-- Runtime settings come from root `runtime-config.json`; `config.js` supplies legacy bootstrap defaults. Create the ignored local config from `runtime-config.example.json`. `.env.example` is not automatically loaded; do not assume environment-only edits affect runtime.
+- Runtime settings come from root `runtime-config.json`; `config.js` supplies legacy bootstrap defaults. `RDXXB_RUNTIME_CONFIG_PATH` overrides the config location. The server reads `PORT`, `NODE_ENV`, and web auth variables directly; `.env.example` is not automatically loaded.
 - No dependency-injection framework is present. Use the existing config and module boundaries rather than introducing a second configuration or state-management layer.
 
 ## Important Files
@@ -59,7 +61,7 @@ There is no aggregate Node build command. The parser `build.sh` scripts package 
 - `parser/parser.py`, `rdxxb-parser/parser.py` — distinct parser implementations.
 - `documentation/RDXXB_Radar_Protocol_Documentation_V1.0_EN.md`, `documentation/RDXXB_Modular_JSON_Schemas_v1_EN.md` — protocol and payload references.
 
-The README is a useful operator guide but has stale claims, including that `npm run dev` starts both Node processes and that the primary parser is only a skeleton. Check `package.json`, `runtime-config.json`, and current source when they disagree; use protocol documentation for wire-format details.
+The README is an operator guide; its primary parser description may be stale. Check `package.json`, `runtime-config.json`, and current source when they disagree; use protocol documentation for wire-format details.
 
 ## Runtime/Tooling Preferences
 
@@ -67,6 +69,6 @@ Use Node.js with npm workspaces and the npm lockfile; Python 3 is required for p
 
 ## Testing & QA
 
-No formal Node test, lint, type-check, coverage, or CI suite is configured. `npm run` lists runtime commands only. The two Python `--self-test` options check binary structure sizes; they are smoke checks, not end-to-end parser tests.
+`npm test` covers server autostart, manual simulator controls, config persistence, platform port precedence, and production authentication. No lint, type-check, coverage, or CI suite is configured. The two Python `--self-test` options check binary structure sizes; they are smoke checks, not end-to-end parser tests.
 
-For a runtime smoke check, start the configured MQTT broker, run `npm run dev`, then run `npm run simulator` or start it from the dashboard. Confirm messages in the Monitor/Telemetry views. For parser changes, use `documentation/udp_packets_for_testing.txt` with the configured UDP listener and verify parser output through the dashboard SSE log and, when enabled, MQTT. Packet captures and `.dat` files are sample/analysis data, not assertions or fixtures managed by a test runner.
+For a runtime smoke check, configure the MQTT broker and run `npm run dev`; the simulator starts as a webapp child by default. Confirm its process/status and MQTT messages in the Monitor/Telemetry views. To run `npm run simulator` separately, set `simulator.autoStart` to `false` first. For parser changes, use `documentation/udp_packets_for_testing.txt` with the configured UDP listener and verify parser output through the dashboard SSE log and, when enabled, MQTT. Packet captures and `.dat` files are sample/analysis data, not assertions or fixtures managed by a test runner.
