@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RDXXB Radar Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Left Navigation ──────────────────────────────────────────────────── -->
+  <nav id="left-nav">
+    <div class="nav-logo">
+      <span class="nav-logo-icon">📡</span>
+      <span class="nav-logo-text">RDXXB</span>
+    </div>
+
+    <div class="nav-section-label">Navigation</div>
+    <div class="nav-items">
+      <button class="nav-btn active" data-tab="map">
+        <span class="nav-icon">🗺</span>
+        <span class="nav-label">Map</span>
+      </button>
+      <button class="nav-btn" data-tab="targets">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">Targets</span>
+      </button>
+      <button class="nav-btn" data-tab="parser">
+        <span class="nav-icon">🧩</span>
+        <span class="nav-label">Parser</span>
+      </button>
+      <button class="nav-btn" data-tab="monitor">
+        <span class="nav-icon">📟</span>
+        <span class="nav-label">Monitor</span>
+      </button>
+      <button class="nav-btn" data-tab="telemetry">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Telemetry</span>
+      </button>
+      <button class="nav-btn" data-tab="simulation">
+        <span class="nav-icon">🛰</span>
+        <span class="nav-label">Simulation</span>
+      </button>
+      <button class="nav-btn" data-tab="settings">
+        <span class="nav-icon">⚙</span>
+        <span class="nav-label">Settings</span>
+      </button>
+    </div>
+
+    <div class="nav-spacer"></div>
+
+    <div class="nav-section-label">Status</div>
+    <div class="nav-status">
+      <span id="mqtt-badge"   class="nav-status-badge status-connecting">MQTT…</span>
+      <span id="sim-badge"    class="nav-status-badge status-stopped">● SIM OFF</span>
+      <span id="parser-badge" class="nav-status-badge status-stopped">● PARSER OFF</span>
+    </div>
+  </nav>
+
+  <!-- Backdrop: tap to close nav on mobile -->
+  <div id="nav-backdrop" class="nav-backdrop"></div>
+
+  <!-- ── Main area ─────────────────────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- Top Bar -->
+    <header id="topbar">
+      <button id="hamburger-menu" class="hamburger-btn" title="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+      <span id="topbar-title" class="topbar-title">Map</span>
+      <div class="topbar-right">
+        <div class="topbar-host">
+          <span class="topbar-host-label">HOST</span>
+          <span id="topbar-host-val">localhost:3000</span>
+        </div>
+        <button id="btn-start-top" class="btn btn-green">▶ Start</button>
+        <button id="btn-stop-top"  class="btn btn-red" disabled>■ Stop</button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div id="content">
+
+      <!-- TAB: Map ─────────────────────────────────────────────────────────── -->
+      <div id="tab-map" class="tab-pane active">
+        <aside id="sidebar">
+          <div id="radar-panel">
+            <div class="panel-title">Radar Location</div>
+            <div class="info-row"><span>Lat</span><span id="radar-lat">—</span></div>
+            <div class="info-row"><span>Lon</span><span id="radar-lon">—</span></div>
+            <div class="info-row"><span>Alt</span><span id="radar-alt">—</span></div>
+          </div>
+          <div id="target-panel">
+            <div class="panel-title">Active Targets <span id="target-count" class="badge">0</span></div>
+            <div id="target-list"></div>
+          </div>
+        </aside>
+        <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Toggle sidebar">
+          <span class="sidebar-toggle-icon">&#8249;</span>
+        </button>
+        <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+        <div id="map"></div>
+      </div>
+
+      <!-- TAB: Targets ─────────────────────────────────────────────────────── -->
+      <div id="tab-targets" class="tab-pane">
+        <div id="table-wrap">
+          <table id="target-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Confidence</th>
+                <th>Signal</th>
+                <th>Distance (m)</th>
+                <th>Azimuth (°)</th>
+                <th>Elevation (°)</th>
+                <th>Altitude (m)</th>
+                <th>Radial Spd (m/s)</th>
+                <th>Lat</th>
+                <th>Lon</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="target-tbody"></tbody>
+          </table>
+        </div>
+        <div id="detail-panel">
+          <div id="detail-header">
+            <span id="detail-title">Target Detail</span>
+            <button id="close-detail">✕</button>
+          </div>
+          <div id="detail-fields"></div>
+          <div id="detail-charts">
+            <div class="chart-label">Distance &amp; Altitude (m)</div>
+            <canvas id="chart-pos"></canvas>
+            <div class="chart-label">Velocity (m/s)</div>
+            <canvas id="chart-vel"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Parser ──────────────────────────────────────────────────────── -->
+      <div id="tab-parser" class="tab-pane">
+        <div id="parser-wrap">
+
+          <!-- Top action bar: status + start/stop -->
+          <div class="parser-control-bar">
+            <div class="parser-stats-row">
+              <div class="stat-badge"><span class="stat-label">Packets Rx</span><span id="stat-packets" class="stat-val">0</span></div>
+              <div class="stat-badge"><span class="stat-label">Frames OK</span><span id="stat-ok" class="stat-val">0</span></div>
+              <div class="stat-badge"><span class="stat-label">Checksum Err</span><span id="stat-err" class="stat-val">0</span></div>
+              <div class="stat-badge"><span class="stat-label">Targets Parsed</span><span id="stat-tgt" class="stat-val">0</span></div>
+            </div>
+            <div class="parser-btns">
+              <button id="btn-check-parser" class="btn btn-info">🔍 Status</button>
+              <button id="btn-save-parser" class="btn btn-secondary">💾 Save Settings</button>
+              <button id="btn-start-parser" class="btn btn-green">▶ Start Parser</button>
+              <button id="btn-stop-parser"  class="btn btn-red" disabled>■ Stop Parser</button>
+              <button id="btn-force-kill-parser" class="btn btn-danger">⚡ Force Stop</button>
+            </div>
+          </div>
+
+          <!-- Settings panel: UDP, MQTT broker, publish mode, modules -->
+          <div class="parser-settings-panel">
+            <div class="parser-settings-grid">
+              <!-- UDP listener -->
+              <div class="parser-settings-card">
+                <h4>📡 UDP Listener</h4>
+                <div class="parser-form-row">
+                  <label>Host (IP)</label>
+                  <input id="p-host" type="text" placeholder="0.0.0.0" />
+                </div>
+                <div class="parser-form-row">
+                  <label>Port</label>
+                  <input id="p-port" type="number" placeholder="20202" />
+                </div>
+              </div>
+
+              <!-- MQTT broker -->
+              <div class="parser-settings-card">
+                <h4>📤 MQTT Broker (Publish)</h4>
+                <div class="parser-form-row">
+                  <label class="toggle-label">
+                    <input id="p-mqtt-enabled" type="checkbox" />
+                    <span>Enable MQTT publish</span>
+                  </label>
+                </div>
+                <div class="parser-form-row">
+                  <label>Host</label>
+                  <input id="p-mqtt-host" type="text" placeholder="127.0.0.1" />
+                </div>
+                <div class="parser-form-row">
+                  <label>Port</label>
+                  <input id="p-mqtt-port" type="number" placeholder="1883" />
+                </div>
+                <div class="parser-form-row">
+                  <label>Username</label>
+                  <input id="p-mqtt-user" type="text" placeholder="(optional)" />
+                </div>
+                <div class="parser-form-row">
+                  <label>Password</label>
+                  <input id="p-mqtt-pass" type="password" placeholder="(optional)" />
+                </div>
+              </div>
+
+              <!-- Publish mode -->
+              <div class="parser-settings-card">
+                <h4>🎚 Publish Mode</h4>
+                <div class="parser-form-row">
+                  <label>Mode</label>
+                  <select id="p-publish-mode">
+                    <option value="modular">Modular (per-topic)</option>
+                    <option value="aggregate">Aggregate (single topic)</option>
+                    <option value="both">Both (aggregate + modular)</option>
+                    <option value="none">None (parse only)</option>
+                  </select>
+                </div>
+                <div class="parser-form-row">
+                  <label>Aggregate topic</label>
+                  <input id="p-aggregate-topic" type="text" placeholder="radar/rdxxb/parsed" />
+                </div>
+                <div class="parser-mode-help">
+                  <small>Modular: each schema → its own topic.<br>Aggregate: full Basic-Usage payload to one topic.</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- Per-module enable + topic table -->
+            <div class="parser-modules-card">
+              <h4>🧱 Module Routing — Enable & Topic per Schema</h4>
+              <table class="parser-modules-table">
+                <thead>
+                  <tr><th style="width:80px">Enabled</th><th>Module</th><th>Topic</th></tr>
+                </thead>
+                <tbody id="p-modules-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Live module previews + raw log -->
+          <div class="parser-output-grid">
+            <!-- Per-module previews -->
+            <div class="parser-modules-preview">
+              <div class="parser-section-titlebar">
+                <span>📊 Live Module Previews</span>
+                <span id="p-preview-meta" class="parser-preview-meta">awaiting frames…</span>
+              </div>
+              <div id="p-modules-preview-grid"></div>
+            </div>
+
+            <!-- Parsed data summary table -->
+            <div id="parser-data-summary">
+              <div class="parser-section-titlebar">
+                <span>📋 Parsed Fields Summary</span>
+              </div>
+              <div id="p-data-table-wrap">
+                <table id="p-data-table" class="parser-data-table">
+                  <thead>
+                    <tr>
+                      <th>Module</th>
+                      <th>Fields Detected</th>
+                      <th>Sample Values</th>
+                    </tr>
+                  </thead>
+                  <tbody id="p-data-tbody">
+                    <tr class="empty-row">
+                      <td colspan="3" style="text-align:center; color:#888;">Waiting for parsed data…</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Raw log terminal -->
+            <div id="parser-terminal">
+              <div class="terminal-titlebar">
+                <span>🖥 UDP Parser Log</span>
+                <label class="toggle-label" style="margin-left:8px">
+                  <select id="p-log-filter">
+                    <option value="all">All events</option>
+                    <option value="raw">RAW only</option>
+                    <option value="parsed">PARSED only</option>
+                    <option value="module">MODULE only</option>
+                    <option value="err">Errors only</option>
+                  </select>
+                </label>
+                <button id="btn-clear-log" class="btn btn-sm">🗑 Clear</button>
+                <label class="toggle-label" style="margin-left:auto">
+                  <input id="chk-autoscroll" type="checkbox" checked /> Auto-scroll
+                </label>
+              </div>
+              <div id="parser-log"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- TAB: Monitor ─────────────────────────────────────────────────────── -->
+      <div id="tab-monitor" class="tab-pane">
+        <div id="monitor-wrap">
+
+          <!-- Control bar -->
+          <div class="monitor-toolbar">
+            <div class="monitor-toolbar-left">
+              <input id="monitor-topic-input" type="text" placeholder="Topic to subscribe (e.g. radar/rdxxb/health)" />
+              <button id="btn-monitor-sub"     class="btn btn-primary">+ Add Window</button>
+              <button id="btn-monitor-add-all" class="btn btn-secondary">Add All Modules</button>
+            </div>
+            <div class="monitor-toolbar-right">
+              <span id="monitor-panel-count" class="monitor-stat-chip">0 windows</span>
+              <button id="btn-monitor-close-all" class="btn btn-secondary btn-danger-hover">Close All</button>
+            </div>
+          </div>
+
+          <!-- Panel grid -->
+          <div id="monitor-panels" class="monitor-panels">
+            <div class="monitor-empty-state">
+              <div class="monitor-empty-icon">📟</div>
+              <div class="monitor-empty-title">No monitor windows open</div>
+              <div class="monitor-empty-hint">Add a topic above or click <b>Add All Modules</b> to start watching MQTT traffic.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- TAB: Telemetry ───────────────────────────────────────────────────── -->
+      <div id="tab-telemetry" class="tab-pane">
+        <div id="telemetry-wrap">
+          <div class="telem-header">
+            <h2 class="telem-title">Radar Telemetry</h2>
+            <p class="telem-subtitle">Live parsed data from each enabled simulation module. Updates in real-time as MQTT messages arrive.</p>
+          </div>
+          <div id="telemetry-cards" class="telem-cards">
+            <div class="telem-empty">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Simulation ────────────────────────────────────────────────────── -->
+      <div id="tab-simulation" class="tab-pane">
+        <div id="simulation-wrap">
+
+          <!-- Publish Settings -->
+          <div class="settings-section">
+            <h2 class="section-title">Publish Settings</h2>
+            <div class="settings-card wide">
+              <div class="form-grid">
+                <div class="form-row"><label>Publish Interval (ms)</label><input id="s-interval" type="number" min="100" max="5000" step="100" /></div>
+                <div class="form-row"><label>Target Count</label><input id="s-targets" type="number" min="1" max="20" step="1" /></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Data Modules -->
+          <div class="settings-section">
+            <div class="section-title-row">
+              <h2 class="section-title">Data Modules</h2>
+              <div class="section-title-actions">
+                <button id="btn-enable-all-mods"  class="btn btn-secondary btn-sm">Enable All</button>
+                <button id="btn-disable-all-mods" class="btn btn-secondary btn-sm">Disable All</button>
+              </div>
+            </div>
+            <p class="section-desc">Enable or disable each schema module and set its MQTT publish topic independently. Disabled modules are never published.</p>
+            <div class="modules-grid">
+
+              <!-- Basic Usage -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-basic_usage-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Basic Usage <span class="card-badge">~200 B/frame</span></div>
+                    <div class="module-desc">Radar GPS + orientation, all targets with classification, polar coords, geodetic position &amp; velocity. Recommended for most apps.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-basic_usage-topic" type="text" class="module-topic" placeholder="radar/rdxxb/basic" /></div>
+              </div>
+
+              <!-- Frame Metadata -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-frame_metadata-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Frame Metadata <span class="card-badge">~40 B/frame</span></div>
+                    <div class="module-desc">Protocol sync wrapper: frame counter, type, timestamp, protocol version, checksum. Always needed for framing.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-frame_metadata-topic" type="text" class="module-topic" placeholder="radar/rdxxb/frame" /></div>
+              </div>
+
+              <!-- Radar Location & Status -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-radar_location-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Radar Location &amp; Status <span class="card-badge">~200 B/frame</span></div>
+                    <div class="module-desc">Radar GPS position, orientation, operational state (work mode, fault, scan mode), servo angles, and frequency band.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-radar_location-topic" type="text" class="module-topic" placeholder="radar/rdxxb/location" /></div>
+              </div>
+
+              <!-- Radar Configuration -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-radar_config-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Radar Configuration <span class="card-badge">~150 B/change</span></div>
+                    <div class="module-desc">Silent zones, detection filters (range, speed, height), and autonomous identification settings. Publish on config change.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-radar_config-topic" type="text" class="module-topic" placeholder="radar/rdxxb/config" /></div>
+              </div>
+
+              <!-- Radar Health -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-radar_health-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Radar Health <span class="card-badge">~300 B/frame</span></div>
+                    <div class="module-desc">Subarray temperatures, power currents &amp; voltages, fan status, memory health, and firmware versions for diagnostics.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-radar_health-topic" type="text" class="module-topic" placeholder="radar/rdxxb/health" /></div>
+              </div>
+
+              <!-- Scan Header -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-scan_header-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Scan Header <span class="card-badge">~30 B/frame</span></div>
+                    <div class="module-desc">Current sweep azimuth &amp; elevation, scan cycle counter, pulse group ID, and total target count. Minimal timing context.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-scan_header-topic" type="text" class="module-topic" placeholder="radar/rdxxb/scan" /></div>
+              </div>
+
+              <!-- Track Data -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-track_data-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Track Data <span class="card-badge">~280 B/target</span></div>
+                    <div class="module-desc">Per-target detailed record: classification, signal quality, polar coordinates, geodetic position, and full ENU velocity vector.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-track_data-topic" type="text" class="module-topic" placeholder="radar/rdxxb/tracks" /></div>
+              </div>
+
+              <!-- Track Metadata -->
+              <div class="module-card">
+                <div class="module-header">
+                  <label class="mod-toggle-wrap"><input type="checkbox" id="mod-track_metadata-enabled" class="mod-toggle-input" /><span class="mod-toggle"></span></label>
+                  <div class="module-info">
+                    <div class="module-title">Track Metadata <span class="card-badge">~50 B/target</span></div>
+                    <div class="module-desc">Per-target track age, point count, loss count, and UTC timestamp (ISO 8601 + Unix epoch). For track management &amp; prediction.</div>
+                  </div>
+                </div>
+                <div class="form-row"><label>MQTT Topic</label><input id="mod-track_metadata-topic" type="text" class="module-topic" placeholder="radar/rdxxb/track-meta" /></div>
+              </div>
+
+            </div><!-- /modules-grid -->
+          </div>
+
+          <!-- Custom Delivery Channels -->
+          <div class="settings-section">
+            <div class="section-title-row">
+              <h2 class="section-title">Custom Delivery Channels</h2>
+              <div class="section-title-actions">
+                <button id="btn-add-custom-channel" class="btn btn-secondary btn-sm">+ Add Channel</button>
+              </div>
+            </div>
+            <p class="section-desc">
+              Define custom MQTT topics that bundle any combination of fields from all modules.
+              Each channel gets its own topic and can include exactly the fields you need.
+            </p>
+            <div id="custom-delivery-list">
+              <!-- channels rendered here by JS -->
+            </div>
+          </div>
+
+          <div class="settings-actions">
+            <button id="btn-save-sim-config" class="btn btn-primary">💾 Save</button>
+            <button id="btn-start-sim" class="btn btn-green">▶ Start Simulation</button>
+            <button id="btn-stop-sim"  class="btn btn-red" disabled>■ Stop Simulation</button>
+          </div>
+          <div id="simulation-toast"></div>
+
+        </div>
+      </div>
+
+      <!-- TAB: Settings ────────────────────────────────────────────────────── -->
+      <div id="tab-settings" class="tab-pane">
+        <div id="settings-wrap">
+          <div class="settings-section">
+            <h2 class="section-title">MQTT Configuration</h2>
+            <div class="mqtt-grid">
+              <div class="settings-card">
+                <div class="card-title">🚀 Simulator Publisher <span class="card-badge">TCP</span></div>
+                <p class="card-desc">Where the simulator sends data. Used server-side — supports raw TCP.</p>
+                <div class="form-row"><label>Protocol</label><select id="sim-protocol"><option value="mqtt">mqtt (TCP)</option><option value="mqtts">mqtts (TLS)</option></select></div>
+                <div class="form-row"><label>Host</label><input id="sim-host" type="text" placeholder="127.0.0.1" /></div>
+                <div class="form-row"><label>Port</label><input id="sim-port" type="number" placeholder="1883" /></div>
+                <div class="form-row"><label>Username</label><input id="sim-username" type="text" placeholder="(optional)" /></div>
+                <div class="form-row"><label>Password</label><input id="sim-password" type="password" placeholder="(optional)" /></div>
+                <div class="form-row"><label>Topic</label><input id="sim-topic" type="text" placeholder="radar/rdxxb/targets" /></div>
+              </div>
+              <div class="settings-card">
+                <div class="card-title">📺 Dashboard Subscriber <span class="card-badge">WebSocket</span></div>
+                <p class="card-desc">Where the browser subscribes. Must be WebSocket — can be a different broker.</p>
+                <div class="form-row"><label>Protocol</label><select id="disp-protocol"><option value="ws">ws (WebSocket)</option><option value="wss">wss (Secure WS)</option></select></div>
+                <div class="form-row"><label>Host</label><input id="disp-host" type="text" placeholder="127.0.0.1" /></div>
+                <div class="form-row"><label>Port</label><input id="disp-port" type="number" placeholder="9001" /></div>
+                <div class="form-row"><label>Username</label><input id="disp-username" type="text" placeholder="(optional)" /></div>
+                <div class="form-row"><label>Password</label><input id="disp-password" type="password" placeholder="(optional)" /></div>
+                <div class="form-row"><label>Topic</label><input id="disp-topic" type="text" placeholder="radar/rdxxb/targets" /></div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h2 class="section-title">Radar Installation</h2>
+            <div class="settings-card wide">
+              <div class="form-grid">
+                <div class="form-row"><label>Longitude</label><input id="r-lon" type="number" step="0.000001" /></div>
+                <div class="form-row"><label>Latitude</label><input id="r-lat" type="number" step="0.000001" /></div>
+                <div class="form-row"><label>Elevation (m)</label><input id="r-alt" type="number" step="0.1" /></div>
+                <div class="form-row"><label>Roll Angle (°)</label><input id="r-roll" type="number" step="0.1" /></div>
+                <div class="form-row"><label>Pitch Angle (°)</label><input id="r-pitch" type="number" step="0.1" /></div>
+                <div class="form-row"><label>North Correction (°)</label><input id="r-north" type="number" step="0.1" /></div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button id="btn-save-config" class="btn btn-primary">💾 Save Configuration</button>
+            <button id="btn-apply-disp"  class="btn btn-secondary">🔄 Reconnect MQTT</button>
+          </div>
+          <div id="settings-toast"></div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+  <!-- Target detail popup (map tab) -->
+  <div id="info-panel" style="display:none;">
+    <div id="info-header">
+      <span>Target Details</span>
+      <button id="close-info">✕</button>
+    </div>
+    <div id="info-content"></div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

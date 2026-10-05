@@ -1,0 +1,18 @@
+{
+  "name": "radar-x-simulation-26",
+  "version": "1.0.0",
+  "description": "RDXXB Radar Simulation & Visualization System",
+  "private": true,
+  "workspaces": [
+    "simulator",
+    "webapp"
+  ],
+  "scripts": {
+    "simulator": "npm run start --workspace=simulator",
+    "webapp": "npm run start --workspace=webapp",
+    "dev": "npm run start --workspace=webapp"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

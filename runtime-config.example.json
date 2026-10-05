@@ -1,0 +1,49 @@
+{
+  "sim_mqtt": {
+    "protocol": "mqtt",
+    "host": "127.0.0.1",
+    "port": 1883,
+    "username": "",
+    "password": "",
+    "topic": "radar/rdxxb/targets"
+  },
+  "display_mqtt": {
+    "protocol": "ws",
+    "host": "127.0.0.1",
+    "port": 9001,
+    "username": "",
+    "password": "",
+    "topic": "radar/rdxxb/basic"
+  },
+  "radar": {
+    "longitude": 107.608234,
+    "latitude": -6.897456,
+    "elevation_m": 150,
+    "roll_angle_deg": 0.5,
+    "pitch_angle_deg": 1.2,
+    "north_correction_angle_deg": 8.5
+  },
+  "simulator": {
+    "publishIntervalMs": 5000,
+    "targetCount": 5
+  },
+  "simulation_modules": {
+    "basic_usage": { "enabled": true, "topic": "radar/rdxxb/basic" },
+    "frame_metadata": { "enabled": true, "topic": "radar/rdxxb/frame" },
+    "radar_location": { "enabled": true, "topic": "radar/rdxxb/location" },
+    "radar_config": { "enabled": true, "topic": "radar/rdxxb/config" },
+    "radar_health": { "enabled": true, "topic": "radar/rdxxb/health" },
+    "scan_header": { "enabled": true, "topic": "radar/rdxxb/scan" },
+    "track_data": { "enabled": true, "topic": "radar/rdxxb/tracks" },
+    "track_metadata": { "enabled": true, "topic": "radar/rdxxb/track-meta" }
+  },
+  "parser": {
+    "udp_host": "127.0.0.1",
+    "udp_port": 20202,
+    "mqtt_enabled": false,
+    "mqtt_topic": "radar/rdxxb/parsed"
+  },
+  "webapp": {
+    "port": 3000
+  }
+}

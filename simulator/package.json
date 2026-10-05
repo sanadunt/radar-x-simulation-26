@@ -1,0 +1,12 @@
+{
+  "name": "simulator",
+  "version": "1.0.0",
+  "description": "RDXXB Radar Target Simulator",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.3.4"
+  }
+}

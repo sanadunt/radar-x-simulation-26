@@ -1,0 +1,37 @@
+{
+  "udp_host": "0.0.0.0",
+  "udp_port": 8000,
+  "mqtt_enabled": false,
+  "mqtt_broker": {
+    "protocol": "mqtt",
+    "host": "127.0.0.1",
+    "port": 1883,
+    "username": "",
+    "password": ""
+  },
+  "publish_mode": "modular",
+  "aggregate_topic": "radar/rdxxb/parsed",
+  "modules": {
+    "basic_usage":    { "enabled": true, "topic": "radar/rdxxb/parsed/basic" },
+    "frame_metadata": { "enabled": true, "topic": "radar/rdxxb/parsed/frame" },
+    "radar_location": { "enabled": true, "topic": "radar/rdxxb/parsed/location" },
+    "radar_config":   { "enabled": true, "topic": "radar/rdxxb/parsed/config" },
+    "radar_health":   { "enabled": true, "topic": "radar/rdxxb/parsed/health" },
+    "scan_header":    { "enabled": true, "topic": "radar/rdxxb/parsed/scan" },
+    "track_data":     { "enabled": true, "topic": "radar/rdxxb/parsed/tracks" },
+    "track_metadata": { "enabled": true, "topic": "radar/rdxxb/parsed/track-meta" }
+  },
+  "radar": {
+    "longitude": 107.608234,
+    "latitude": -6.897456,
+    "elevation_m": 150,
+    "roll_angle_deg": 0.5,
+    "pitch_angle_deg": 1.2,
+    "north_correction_angle_deg": 8.5,
+    "heading_angle_deg": 0,
+    "satellite_count": 8,
+    "installed_location_name": "Site A",
+    "device_ip": "192.168.1.100",
+    "device_port": 7000
+  }
+}

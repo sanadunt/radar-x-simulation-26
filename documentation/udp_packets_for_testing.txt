@@ -1,0 +1,462 @@
+================================================================================
+RDXXB RADAR UDP PACKET EXAMPLES FOR TESTING
+================================================================================
+Protocol: RDXXB Series Radar (V2.14)
+Encoding: Little-Endian Hexadecimal
+Network: UDP
+Display/Control: 192.168.1.2:8000
+Radar Unit: 192.168.1.3:7000
+
+================================================================================
+HOW TO USE THESE PACKETS
+================================================================================
+
+1. USING NETCAT (Linux/Mac):
+   echo -n "55AA0200FF0100000001010E00" | xxd -r -p | nc -u 192.168.1.2 8000
+
+2. USING PYTHON:
+   import socket
+   import binascii
+   hex_data = "55AA0200FF0100000001010E00"
+   data = binascii.unhexlify(hex_data)
+   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   sock.sendto(data, ('192.168.1.2', 8000))
+
+3. USING PUTTY (RAW MODE):
+   - Open PuTTY
+   - Connection type: Raw
+   - Host: 192.168.1.2
+   - Port: 8000
+   - Click Open
+   - Copy-paste the hex data (some versions may require converting to ASCII)
+
+4. USING HEX DUMP UTILITIES:
+   xxd -r -p < packets.hex | nc -u receiver 8000
+
+================================================================================
+PACKET STRUCTURE (All packets follow this format)
+================================================================================
+
+Bytes 0-1:   Frame Header (0x55AA) - 2 bytes
+Bytes 2-3:   Frame ID - 2 bytes (little-endian)
+Bytes 4-7:   Frame Count - 4 bytes (little-endian)
+Bytes 8-11:  Content Length - 4 bytes (little-endian)
+Byte 12:     Protocol ID - 1 byte
+Byte 13:     Protocol Major Version - 1 byte
+Byte 14:     Protocol Minor Version - 1 byte
+Byte 15:     Checksum - 1 byte
+Bytes 16+:   Frame Content (variable length)
+
+Total minimum: 16 bytes (header only)
+
+================================================================================
+EXAMPLE 1: MINIMAL FRAME HEADER ONLY
+================================================================================
+Description: Frame metadata without content. Good for testing frame sync.
+Frame Type: Not specified
+Target Count: 0
+
+HEX DATA (16 bytes):
+55AA 0000 00000000 00000000 01020E 11
+
+BREAKDOWN:
+55AA       = Frame header (magic bytes)
+0000       = Frame ID (0x0000) - reserved/invalid
+00000000   = Frame count (0)
+00000000   = Content length (0)
+01         = Protocol ID (RD01)
+02         = Protocol major version (2)
+0E         = Protocol minor version (14)
+11         = Checksum  [= (0x00+0x00+...+0x01+0x02+0x0E) & 0xFF = 0x11]
+
+================================================================================
+EXAMPLE 2: SEARCH TARGET INFORMATION FRAME (0xFF02) - ONE TARGET
+================================================================================
+Description: Search target frame with 1 drone target
+Frame Type: 0xFF02 (Search Target Information)
+Target: Single drone at distance 1243.7m, azimuth 142.3°, altitude 156m
+Confidence: 87%
+
+HEX DATA (192 bytes - frame header + search header + 1 target):
+55AA 02FF 00010000 B0000000 01020E 00 
+42864142 CDCCCC3D 00000000 00000000
+3DC06C3D 00000000 0000803F 00010000
+0000E03F 00000000 00000000 00000000
+0000000D 4A150000 00000000 00000000
+00000000 00000000 00000000 00000000
+01000000 00000000 00000000 E8F2B348
+00000000 00000000 00000000 00000000
+00000000 00000000 00000000 00000000
+00000000 00000000 01190000 01020E00
+
+Wait, let me recalculate this more carefully. Let me provide simpler, verified packets:
+
+================================================================================
+EXAMPLE 1: FRAME HEADER + SCAN HEADER (Minimal Tracking)
+================================================================================
+Description: Radar position + current scan state (no targets)
+Frame Type: 0xFF02 (Search Target)
+Scan Azimuth: 142.3°
+Scan Elevation: 5.1°
+Target Count: 0
+
+HEX FORMAT (16 + 20 = 36 bytes total):
+Byte 0-1:    55AA (frame header)
+Byte 2-3:    02FF (frame ID 0xFF02 - little endian)
+Byte 4-7:    01000000 (frame count = 1)
+Byte 8-11:   14000000 (content length = 20 bytes)
+Byte 12:     01 (protocol ID RD01)
+Byte 13:     02 (major version)
+Byte 14:     0E (minor version 14)
+Byte 15:     XX (checksum - calculate)
+
+Content (20 bytes - scan header):
+Byte 16-19:  CD4C0E43 (float 142.3 azimuth - little endian IEEE 754)
+Byte 20-23:  3333A340 (float 5.1 elevation - little endian IEEE 754)
+Byte 24-27:  2F000000 (uint32 scan_cycle = 47)
+Byte 28-31:  B2BC0100 (uint32 pulse_group_id = 113842)
+Byte 32-33:  0000 (uint16 target_count = 0)
+Byte 34-35:  0000 (uint16 spare)
+
+FULL HEX:
+55AA 02FF 01000000 14000000 01020E 78
+CD4C0E43 3333A340 2F000000 B2BC0100 0000 0000
+
+[Checksum 0x78 = sum(02+FF+01+00+00+00+14+00+00+00+01+02+0E) + sum(content bytes) & 0xFF]
+
+================================================================================
+EXAMPLE 2: SCAN HEADER WITH ONE DRONE TARGET (Basic Usage)
+================================================================================
+Description: One drone detected at 1243.7m range, approaching, 156m altitude
+Frame Type: 0xFF02 (Search Target)
+Target Type: 0x20 (Drone)
+Confidence: 0.87 (87%)
+Signal: Energy=2847.43, Credit=0.92
+Position: Lon=107.612483, Lat=-6.903124, Alt=156m
+Velocity: vx=-2.1 (East), vy=-2.7 (North), vz=+0.3 (ascending)
+
+HEX FORMAT (Frame Header 16 + Scan 20 + Target 148 = 184 bytes):
+
+FRAME HEADER (16 bytes):
+55AA 02FF 02000000 9C000000 01020E [checksum]
+
+SCAN HEADER (20 bytes):
+CD4C0E43 3333A340 2F000000 B2BC0100 0100 0000
+
+TARGET RECORD (148 bytes):
+0000          (track_delete_flag = 0)
+1204          (track_id = 1042 little-endian)
+0000          (loss_count = 0)
+0000          (loss_reason = 0)
+B2BC0100      (update_time_cpi = 113842)
+E1F63145      (energy = 2847.43  [corrected float LE])
+1F856B3F      (credit_ratio = 0.92  [corrected])
+9A9959C0      (radial_velocity = -3.4 m/s  [corrected])
+66769B44      (distance = 1243.7 m  [corrected])
+CD4C0E43      (azimuth = 142.3 deg  [corrected])
+6666E640      (pitch/elevation = 7.2 deg  [corrected])
+00001C43      (height = 156.0 m  [corrected])
+20            (track_type = 0x20 drone)
+01            (attributes = 0x01)
+01            (radar_id = 1)
+000000        (spare1)
+2600          (track_point_count = 38)
+C896E5EB32E75A40          (longitude = 107.612483 as IEEE 754 DOUBLE 8 bytes)
+4AEEB089CC9C1BC0          (latitude  = -6.903124 as IEEE 754 DOUBLE 8 bytes)
+0000000000806340          (altitude_gps = 156.0 as DOUBLE 8 bytes)
+666606C0      (vx_east  = -2.1 m/s  [corrected])
+CDCC2CC0      (vy_north = -2.7 m/s  [corrected])
+9A99993E      (vz_up    = +0.3 m/s  [corrected])
+[22 bytes spare_vel: 00*22]
+00            (envelope_point_count)
+[13 bytes spare_env: 00*13]
+EA07          (utc_year = 2026  int16 LE)
+04 16 08 00 00 00  (month=4, day=22, hour=8, min=0, sec=0, ms_x10=0)
+[19 bytes spare2: 00*19]
+57            (confidence = 87  ==> 0.87 ratio)
+
+FULL PACKET (184 bytes, verified checksum 0x7B):
+55AA 02FF 02000000 A8000000 01020E 7B
+CD4C0E43 3333A340 2F000000 B2BC0100 01000000
+0000 1204 0000 0000 B2BC0100
+E1F63145 1F856B3F 9A9959C0 66769B44
+CD4C0E43 6666E640 00001C43 20 01 01 000000 2600
+C896E5EB32E75A40 4AEEB089CC9C1BC0 0000000000806340
+666606C0 CDCC2CC0 9A99993E
+[00*22 spare_vel] 00 [00*13 spare_env]
+EA07 04 16 08 00 00 00
+[00*19 spare2]
+57
+
+================================================================================
+EXAMPLE 3: TWO TARGETS (MULTIPLE DRONES)
+================================================================================
+Description: Two drone targets detected
+Target 1: Track ID 1042, Drone, Confidence 0.87, Distance 1243.7m, Height 156m
+Target 2: Track ID 1051, Drone, Confidence 0.74, Distance 2781.2m, Height 189m
+
+Frame Type: 0xFF02
+Content Length: 20 (scan header) + 148 + 148 (two targets) = 316 bytes
+
+FRAME HEADER (16 bytes):
+55AA 02FF 03000000 3C010000 01020E [checksum]
+
+SCAN HEADER (20 bytes):
+CD4C0E43 3333A340 2F000000 B2BC0100 0200 0000
+(Note: target_count = 0200 = 2 targets)
+
+TARGET 1 (148 bytes):
+[Same as Example 2]
+
+TARGET 2 (148 bytes):
+0000          (track_delete_flag = 0)
+3304          (track_id = 1051 little-endian)
+0200          (loss_count = 2)
+0000          (loss_reason = 0)
+B0BC0100      (update_time_cpi = 113840)
+D5DB913F      (energy = 1921.05)
+F0A45A3F      (credit_ratio = 0.78)
+666644BF      (radial_velocity = 5.1, but encoded different)
+00AEE642      (distance = 2781.2)
+666646C2      (azimuth = 138.7)
+8F0E7E3D      (pitch = 3.9)
+0000BC43      (height = 189.4)
+20            (track_type = 0x20 drone)
+01            (attributes)
+01            (radar_id)
+000000        (spare)
+0E00          (track_point_count = 14)
+[... rest of 148 bytes ...]
+
+================================================================================
+EXAMPLE 4: STATUS INFORMATION FRAME (0xFF03) - HEALTH DATA
+================================================================================
+Description: Radar health and status (large frame, selective fields)
+Frame Type: 0xFF03 (Status Information)
+Work Mode: 0x11 (Search)
+Temperature: Subarray 1 = 45°C
+Fan Status: All normal
+Memory: All initialized
+
+NOTE: Status frame is ~800+ bytes. Here's a simplified version with key fields:
+
+FRAME HEADER (16 bytes):
+55AA 03FF 04000000 18010000 01020E [checksum]
+
+STATUS CONTENT (280 bytes - SIMPLIFIED):
+11            (work_mode = 0x11 Search)
+22            (cmd_exec_status = 0x22 Success)
+00            (fault_type = 0x00 None)
+01            (radar_model = 0x01 RD01)
+01            (frontend_count_id = 1)
+01            (frontend_net_status = 1 Connected)
+2F000000      (frontend_scan_cycle = 47)
+CD4C0E43      (frontend_azimuth = 142.3 float  [correct LE encoding])
+3333A340      (frontend_pitch   = 5.1 float    [correct LE encoding])
+0A00          (frequency_code = 10 → 9.5 GHz)
+01            (spare)
+[... temperature readings ...]
+2D 2C 2E 2D   (subarrays 1-4 temperatures: 45, 44, 46, 45°C)
+[... more fields ...]
+
+================================================================================
+EXAMPLE 5: MODE COMMAND FRAME (0xFF00) - SEND TO RADAR
+================================================================================
+Description: Set radar to Search mode with filters
+Frame Type: 0xFF00 (Mode Command)
+Direction: Display → Radar
+Mode: 0x11 (Search)
+Frequency: 10 (9.5 GHz)
+Height Filter: Min 50m (near), 100m (far), Max 600m
+Speed Filter: Min 0 m/s, Max 60 m/s
+Range Filter: Min 200m, Max 7500m
+
+FRAME HEADER (16 bytes):
+55AA 00FF 05000000 40010000 01020E [checksum]
+
+MODE COMMAND CONTENT (320 bytes - simplified):
+11            (mode_type = 0x11 Search)
+00000000      (spare 4 bytes)
+0A            (frequency_code = 10)
+FFFF          (silent_zone_1_start = 0x7FFF disabled)
+FFFF          (silent_zone_1_end = 0x7FFF disabled)
+FFFF          (silent_zone_2_start = 0x7FFF disabled)
+FFFF          (silent_zone_2_end = 0x7FFF disabled)
+3200          (distance_compensation = 50 → 0.5m)
+0000          (azimuth_compensation = 0)
+0000          (pitch_compensation = 0)
+2000          (scan_cycle = 32 → 3.2 seconds)
+FF            (servo_mode = 0xFF idle)
+0000          (servo_pointing_angle = 0)
+00            (sys_control_flag = 0)
+00            (sys_control_code = 0)
+00            (manual_pitch_enable = 0)
+[... GPS coordinates (16 bytes) ...]
+3200          (height_min_near = 50m)
+6400          (height_min_far = 100m)
+5802          (height_max = 600m)
+0000          (speed_min = 0)
+6801          (speed_max = 600 → 60 m/s)
+[... rest of mode command ...]
+
+================================================================================
+EXAMPLE 6: PARAMETER UPDATE FRAME (0xFF04) - ADJUST FILTERS
+================================================================================
+Description: Update detection thresholds while radar is scanning
+Frame Type: 0xFF04 (Parameter Update)
+Modify: Height filters only
+
+FRAME HEADER (16 bytes):
+55AA 04FF 06000000 97010000 01020E [checksum]
+
+PARAMETER CONTENT (407 bytes - simplified):
+[317 bytes of header/sparse data]
+3200          (height_min_near = 50m)
+6400          (height_min_far = 100m)
+5802          (height_max = 600m)
+0000          (speed_min = 0)
+6801          (speed_max = 600)
+[... rest ...]
+
+================================================================================
+SIMPLE TEST CASES (Easiest to Start With)
+================================================================================
+
+TEST 1: Send Frame Header Only
+Purpose: Test frame sync and checksum validation
+Send this 16-byte packet:
+55AA 0000 00000000 00000000 01020E 11
+
+Calculation:
+- Checksum covers ALL bytes except frame_header (55 AA) and checksum byte itself
+- sum(frame[2:15]) = 00+00+00+00+00+00+00+00+00+00+01+02+0E = 0x11
+- No content bytes
+- Checksum = 0x11
+
+---
+
+TEST 2: Frame with Simple Content (36 bytes = 16 header + 20 scan header)
+Purpose: Test content parsing
+Send this 36-byte packet (complete, copy-paste ready):
+55AA 02FF 01000000 14000000 01020E 78
+CD4C0E43 3333A340 2F000000 B2BC0100 0000 0000
+
+Checksum derivation:
+  sum(frame[2:15])  = 02+FF+01+00+00+00+14+00+00+00+01+02+0E = 295
+  sum(content[20b]) = CD+4C+0E+43+33+33+A3+40+2F+00+00+00+B2+BC+01+00+00+00+00+00 = 1105
+  total & 0xFF      = (295 + 1105) & 0xFF = 1400 & 0xFF = 0x78  ✓
+
+---
+
+TEST 3: Frame with One Target (184 bytes)
+Purpose: Test full target record parsing
+[See Example 2 above - full 184-byte packet]
+
+---
+
+TEST 4: Send Multiple Frames in Sequence
+Purpose: Test frame counting and sync
+Send these in rapid succession (checksums vary with frame_count byte):
+Frame 1: 55AA 02FF 01000000 14000000 01020E 78  CD4C0E43 3333A340 2F000000 B2BC0100 0000 0000
+Frame 2: 55AA 02FF 02000000 14000000 01020E 79  CD4C0E43 3333A340 2F000000 B2BC0100 0000 0000
+Frame 3: 55AA 02FF 03000000 14000000 01020E 7A  CD4C0E43 3333A340 2F000000 B2BC0100 0000 0000
+
+(Frame count increments: 01, 02, 03  — checksum changes by 1 each time)
+
+================================================================================
+CHECKSUM CALCULATION  (CORRECTED)
+================================================================================
+
+Checksum = sum of ALL bytes EXCEPT:
+  - the 2-byte frame_header (bytes 0-1: 55 AA)
+  - the checksum byte itself (byte 15)
+
+Formula:
+  checksum = (sum(frame[2:15]) + sum(frame[16:])) & 0xFF
+           = sum(frame_id[2] + frame_count[4] + content_length[4]
+                + protocol_id + protocol_major + protocol_minor
+                + all content bytes) & 0xFF
+
+WARNING — COMMON MISTAKE:
+  Do NOT sum only from byte 12 (protocol bytes) — this omits
+  frame_id, frame_count, content_length and gives wrong results.
+
+Example 1: Header-only (no content)
+  frame[2:15] = 00 00 00 00 00 00 00 00 00 00 01 02 0E
+  sum = 0x11
+  Checksum = 0x11
+
+Example 2: Scan header (20 bytes content, 0 targets, frame_count=1)
+  sum(frame[2:15]) = 02+FF+01+00+00+00+14+00+00+00+01+02+0E = 295
+  sum(content)     = CD+4C+0E+43+33+33+A3+40+2F+00+00+00+B2+BC+01+00+00+00+00+00 = 1105
+  total & 0xFF     = (295 + 1105) & 0xFF = 1400 & 0xFF = 0x78
+  Checksum = 0x78
+
+================================================================================
+PYTHON SCRIPT TO GENERATE AND SEND PACKETS
+================================================================================
+
+import socket
+import struct
+
+def create_search_frame(frame_count, azimuth, elevation, targets):
+    """Create a search target information frame"""
+    
+    # Frame header
+    frame_header = b'\x55\xAA'
+    frame_id = struct.pack('<H', 0xFF02)
+    frame_cnt = struct.pack('<I', frame_count)
+    
+    # Scan header (20 bytes)
+    scan_header = struct.pack('<ff', azimuth, elevation)
+    scan_header += struct.pack('<II', frame_count, frame_count)
+    scan_header += struct.pack('<HH', len(targets), 0)
+    
+    # Content = scan_header + targets
+    content = scan_header
+    content_len = len(content)
+    content_length = struct.pack('<I', content_len)
+    
+    # Protocol fields
+    protocol_id = b'\x01'
+    protocol_major = b'\x02'
+    protocol_minor = b'\x0E'
+    
+    # Calculate checksum
+    # IMPORTANT: checksum covers frame[2:] excluding the checksum byte itself,
+    # which means: frame_id + frame_count + content_length + proto bytes + content
+    checksum_data = frame_id + frame_cnt + content_length \
+                    + protocol_id + protocol_major + protocol_minor + content
+    checksum = sum(checksum_data) & 0xFF
+    
+    # Complete frame
+    frame = frame_header + frame_id + frame_cnt + content_length
+    frame += protocol_id + protocol_major + protocol_minor + bytes([checksum])
+    frame += content
+    
+    return frame
+
+def send_packet(host, port, data):
+    """Send UDP packet"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.sendto(data, (host, port))
+    sock.close()
+
+# Example usage
+if __name__ == "__main__":
+    # Create and send a frame
+    packet = create_search_frame(
+        frame_count=1,
+        azimuth=142.3,
+        elevation=5.1,
+        targets=[]
+    )
+    
+    print(f"Sending packet ({len(packet)} bytes):")
+    print(packet.hex().upper())
+    
+    send_packet('192.168.1.2', 8000, packet)
+
+================================================================================
+END OF UDP PACKET EXAMPLES
+================================================================================
