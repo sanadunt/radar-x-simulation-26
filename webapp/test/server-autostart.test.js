@@ -10,6 +10,7 @@ const test = require('node:test');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const SERVER_PATH = path.join(PROJECT_ROOT, 'webapp', 'server.js');
+const ROOT_ENTRY_PATH = path.join(PROJECT_ROOT, 'server.js');
 
 async function getFreePort() {
   const listener = net.createServer();
@@ -121,7 +122,7 @@ async function startServerFixture(autoStart, options = {}) {
     WEBAPP_AUTH_PASSWORD: options.authPassword || '',
     RDXXB_RUNTIME_CONFIG_PATH: configPath,
   };
-  const server = spawn(process.execPath, [SERVER_PATH], {
+  const server = spawn(process.execPath, [options.serverPath || SERVER_PATH], {
     cwd: PROJECT_ROOT,
     env: environment,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -182,6 +183,13 @@ async function startServerFixture(autoStart, options = {}) {
     throw error;
   }
 }
+
+test('starts through the repository-root server entrypoint', async t => {
+  const fixture = await startServerFixture(false, { serverPath: ROOT_ENTRY_PATH });
+  t.after(() => fixture.close());
+
+  assert.equal((await fixture.readStatus()).running, false);
+});
 
 test('starts the simulator without a browser and persists config updates', async t => {
   const fixture = await startServerFixture(true);

@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "description": "RDXXB Radar Simulation & Visualization System",
   "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "workspaces": [
     "simulator",
     "webapp"
   ],
   "scripts": {
-    "start": "npm run start --workspace=webapp",
+    "start": "node server.js",
     "simulator": "npm run start --workspace=simulator",
     "webapp": "npm run start --workspace=webapp",
     "dev": "npm run start --workspace=webapp",

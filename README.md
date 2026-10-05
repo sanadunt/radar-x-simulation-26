@@ -277,7 +277,9 @@ Change both `sim_mqtt` and `display_mqtt` to point to your broker's IP/hostname.
 
 ### 5.4 Hostinger deployment
 
-Use `npm start` as the Hostinger app start command; the root script launches the webapp workspace. The server uses Hostinger's `PORT` environment variable when provided, falling back to `runtime-config.json`'s `webapp.port`, and binds to `0.0.0.0`. Hostinger supports Express Node.js web apps on Business and Cloud plans; its [environment variable settings](https://www.hostinger.com/support/how-to-add-environment-variables-during-node-js-application-deployment/) keep deployment values out of the repository.
+For GitHub deployment, set the application root to the repository root containing `package.json` and `server.js`. Select Express if Hostinger detects it; if the framework is set to “Other”, use `server.js` as the entry file. Start the app with `npm start`; there is no separate frontend build command. Hostinger supports Node.js 18, 20, 22, and 24, and the root package declares Node.js 18 or newer.
+
+The server listens on Hostinger's injected `PORT` and falls back to `runtime-config.json`'s `webapp.port` (`3000`). It binds to `0.0.0.0`; visitors use the assigned domain over HTTPS, not the internal app port. Hostinger supports Express Node.js apps on Business and Cloud plans. See its [GitHub deployment guide](https://www.hostinger.com/support/how-to-deploy-a-nodejs-website-in-hostinger/) and [environment variable settings](https://www.hostinger.com/support/how-to-add-environment-variables-during-node-js-application-deployment/).
 
 Set these values in Hostinger's environment settings:
 
@@ -292,6 +294,8 @@ The app refuses production startup without both auth values, protects the dashbo
 `runtime-config.json` must be writable and stored somewhere that survives redeployment. Set `RDXXB_RUNTIME_CONFIG_PATH` to that file's path if the default project-root file is not persistent.
 
 The simulator is a long-running child of the webapp. It keeps running when the browser closes, but stops when the webapp stops or restarts. Hostinger documents scheduled tasks and resource limits for Web and Cloud plans, but does not guarantee a permanent child process. For a continuously running simulator, use a Hostinger VPS and manage the app with a process manager such as PM2. See Hostinger's [background-process guidance](https://www.hostinger.com/support/which-server-capabilities-are-supported-at-hostinger/) and [VPS Node.js setup](https://www.hostinger.com/support/9553137-how-to-set-up-a-node-js-application-using-hostinger-cloudpanel/).
+
+If the public domain serves Hostinger's generic 403/404 pages instead of the app's Basic Auth challenge or JSON API, the request is not reaching Express. Verify the Node.js deployment succeeded, the domain is assigned to that app, and Hostinger's generated `public_html/.htaccess` routes to the Node.js app. Hostinger recommends redeploying to regenerate an incorrect `.htaccess`; check the [build and runtime logs](https://www.hostinger.com/support/how-to-troubleshoot-a-failed-node-js-deployment-using-build-logs/) before changing code.
 
 
 ---
